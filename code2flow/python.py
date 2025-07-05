@@ -141,8 +141,6 @@ def get_inherits(tree):
 
 
 class Python(BaseLanguage):
-    # Class variable to store source code lines for current file
-    _current_source_lines = None
     
     @staticmethod
     def assert_dependencies():
@@ -154,7 +152,7 @@ class Python(BaseLanguage):
         Get the entire AST for this file
 
         :param filename str:
-        :rtype: ast
+        :rtype: (ast, list[str]) - tuple of AST and source lines
         """
         try:
             with open(filename) as f:
@@ -163,9 +161,9 @@ class Python(BaseLanguage):
             with open(filename, encoding='UTF-8') as f:
                 raw = f.read()
         
-        # Store source lines for later use
-        Python._current_source_lines = raw.splitlines()
-        return ast.parse(raw)
+        # Return both AST and source lines
+        source_lines = raw.splitlines()
+        return ast.parse(raw), source_lines
 
     @staticmethod
     def separate_namespaces(tree):
@@ -197,13 +195,14 @@ class Python(BaseLanguage):
         return groups, nodes, body
 
     @staticmethod
-    def make_nodes(tree, parent):
+    def make_nodes(tree, parent, source_lines=None):
         """
         Given an ast of all the lines in a function, create the node along with the
         calls and variables internal to it.
 
         :param tree ast:
         :param parent Group:
+        :param source_lines list[str]: Source code lines for the file
         :rtype: list[Node]
         """
         token = tree.name
@@ -218,15 +217,15 @@ class Python(BaseLanguage):
         if parent.group_type == GROUP_TYPE.FILE:
             import_tokens = [djoin(parent.token, token)]
 
-        # Extract source code from stored source lines
+        # Extract source code from provided source lines
         source_code = None
-        if Python._current_source_lines and hasattr(tree, 'lineno') and hasattr(tree, 'end_lineno'):
+        if source_lines and hasattr(tree, 'lineno') and hasattr(tree, 'end_lineno'):
             try:
                 start_line = tree.lineno - 1  # Convert to 0-based indexing
                 # Since start_line is already converted to 0-based index and end_lineno is 1-based,
                 # we can directly use [start_line:end_line] for slicing without adding one to end_line
                 end_line = tree.end_lineno if tree.end_lineno else start_line + 1
-                source_code = '\n'.join(Python._current_source_lines[start_line:end_line])
+                source_code = '\n'.join(source_lines[start_line:end_line])
             except (IndexError, AttributeError):
                 pass
 
@@ -235,13 +234,14 @@ class Python(BaseLanguage):
                      source_code=source_code)]
 
     @staticmethod
-    def make_root_node(lines, parent):
+    def make_root_node(lines, parent, source_lines=None):
         """
         The "root_node" is an implict node of lines which are executed in the global
         scope on the file itself and not otherwise part of any function.
 
         :param lines list[ast]:
         :param parent Group:
+        :param source_lines list[str]: Source code lines for the file
         :rtype: Node
         """
         token = "(global)"
@@ -251,7 +251,7 @@ class Python(BaseLanguage):
         
         # Extract source code for global scope
         source_code = None
-        if Python._current_source_lines and lines:
+        if source_lines and lines:
             try:
                 # Get line numbers from all global statements
                 line_numbers = []
@@ -265,8 +265,8 @@ class Python(BaseLanguage):
                     # Extract lines that contain global code
                     global_lines = []
                     for line_num in sorted(set(line_numbers)):
-                        if 0 <= line_num < len(Python._current_source_lines):
-                            global_lines.append(Python._current_source_lines[line_num])
+                        if 0 <= line_num < len(source_lines):
+                            global_lines.append(source_lines[line_num])
                         else:
                             logging.warning("Line number %d is out of range for source lines in %r.", line_num, token)
                     source_code = '\n'.join(global_lines)
@@ -277,7 +277,7 @@ class Python(BaseLanguage):
                    source_code=source_code)
 
     @staticmethod
-    def make_class_group(tree, parent):
+    def make_class_group(tree, parent, source_lines=None):
         """
         Given an AST for the subgroup (a class), generate that subgroup.
         In this function, we will also need to generate all of the nodes internal
@@ -285,6 +285,7 @@ class Python(BaseLanguage):
 
         :param tree ast:
         :param parent Group:
+        :param source_lines list[str]: Source code lines for the file
         :rtype: Group
         """
         assert type(tree) == ast.ClassDef
@@ -302,7 +303,7 @@ class Python(BaseLanguage):
                             inherits=inherits, line_number=line_number, parent=parent)
 
         for node_tree in node_trees:
-            class_group.add_node(Python.make_nodes(node_tree, parent=class_group)[0])
+            class_group.add_node(Python.make_nodes(node_tree, parent=class_group, source_lines=source_lines)[0])
 
         for subgroup_tree in subgroup_trees:
             logging.warning("Code2flow does not support nested classes. Skipping %r in %r.",

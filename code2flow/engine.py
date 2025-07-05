@@ -330,7 +330,7 @@ def get_sources_and_language(raw_source_paths, language):
     return sources, language
 
 
-def make_file_group(tree, filename, extension):
+def make_file_group(tree, filename, extension, source_lines=None):
     """
     Given an AST for the entire file, generate a file group complete with
     subgroups, nodes, etc.
@@ -338,6 +338,7 @@ def make_file_group(tree, filename, extension):
     :param tree ast:
     :param filename str:
     :param extension str:
+    :param source_lines list[str]: Source code lines for the file (Python only)
 
     :rtype: Group
     """
@@ -352,14 +353,25 @@ def make_file_group(tree, filename, extension):
 
     file_group = Group(token, group_type, display_name, import_tokens,
                        line_number, parent=None)
+    # ugly if, just care about python
     for node_tree in node_trees:
-        for new_node in language.make_nodes(node_tree, parent=file_group):
-            file_group.add_node(new_node)
+        if extension == 'py':
+            for new_node in language.make_nodes(node_tree, parent=file_group, source_lines=source_lines):
+                file_group.add_node(new_node)
+        else:
+            for new_node in language.make_nodes(node_tree, parent=file_group):
+                file_group.add_node(new_node)
 
-    file_group.add_node(language.make_root_node(body_trees, parent=file_group), is_root=True)
+    if extension == 'py':
+        file_group.add_node(language.make_root_node(body_trees, parent=file_group, source_lines=source_lines), is_root=True)
+    else:
+        file_group.add_node(language.make_root_node(body_trees, parent=file_group), is_root=True)
 
     for subgroup_tree in subgroup_trees:
-        file_group.add_subgroup(language.make_class_group(subgroup_tree, parent=file_group))
+        if extension == 'py':
+            file_group.add_subgroup(language.make_class_group(subgroup_tree, parent=file_group, source_lines=source_lines))
+        else:
+            file_group.add_subgroup(language.make_class_group(subgroup_tree, parent=file_group))
     return file_group
 
 
@@ -465,7 +477,13 @@ def map_it(sources, extension, no_trimming, exclude_namespaces, exclude_function
     file_ast_trees = []
     for source in sources:
         try:
-            file_ast_trees.append((source, language.get_tree(source, lang_params)))
+            result = language.get_tree(source, lang_params)
+            # Handle the case where Python returns (AST, source_lines) tuple
+            # and other languages return just AST
+            if extension == 'py' and isinstance(result, tuple) and len(result) == 2:
+                file_ast_trees.append((source, result[0], result[1]))  # (source, tree, source_lines)
+            else:
+                file_ast_trees.append((source, result, None))  # (source, tree, None)
         except Exception as ex:
             if skip_parse_errors:
                 logging.warning("Could not parse %r. (%r) Skipping...", source, ex)
@@ -474,8 +492,8 @@ def map_it(sources, extension, no_trimming, exclude_namespaces, exclude_function
 
     # 2. Find all groups (classes/modules) and nodes (functions) (a lot happens here)
     file_groups = []
-    for source, file_ast_tree in file_ast_trees:
-        file_group = make_file_group(file_ast_tree, source, extension)
+    for source, file_ast_tree, source_lines in file_ast_trees:
+        file_group = make_file_group(file_ast_tree, source, extension, source_lines)
         file_groups.append(file_group)
 
     # 3. Trim namespaces / functions to exactly what we want
