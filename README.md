@@ -1,3 +1,6 @@
+# This is a fork for scottrogowski/code2flow, turn to add code src to json output
+# Now ONLY for python project 
+# Main changes: python.py, model.py
 ![code2flow logo](https://raw.githubusercontent.com/scottrogowski/code2flow/master/assets/code2flowlogo.png)
 
 ![Version 2.5.1](https://img.shields.io/badge/version-2.5.1-brightgreen) ![Build passing](https://img.shields.io/badge/build-passing-brightgreen) ![Coverage 100%](https://img.shields.io/badge/coverage-100%25-brightgreen) ![License MIT](https://img.shields.io/badge/license-MIT-green])
@@ -147,7 +150,7 @@ How to contribute
 3. **Add a language**: While dense, each language implementation is between 250-400 lines of code including comments. If you want to implement another language, the existing implementations can be your guide.
 
 
-Unit tests
+Unit tests(not suit this code2flow_with_src fork)
 ------------------
 
 Test coverage is 100%. To run:
