@@ -261,7 +261,7 @@ class Call():
 
 class Node():
     def __init__(self, token, calls, variables, parent, import_tokens=None,
-                 line_number=None, is_constructor=False):
+                 line_number=None, is_constructor=False, source_code=None):
         self.token = token
         self.line_number = line_number
         self.calls = calls
@@ -269,6 +269,7 @@ class Node():
         self.import_tokens = import_tokens or []
         self.parent = parent
         self.is_constructor = is_constructor
+        self.source_code = source_code
 
         self.uid = "node_" + os.urandom(4).hex()
 
@@ -429,11 +430,14 @@ class Node():
         Output for json files (json graph specification)
         :rtype: dict
         """
-        return {
+        result = {
             'uid': self.uid,
             'label': self.label(),
             'name': self.name(),
         }
+        if self.source_code:
+            result['source_code'] = self.source_code
+        return result
 
 
 def _wrap_as_variables(sequence):

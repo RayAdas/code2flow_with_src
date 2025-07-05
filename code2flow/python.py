@@ -141,6 +141,9 @@ def get_inherits(tree):
 
 
 class Python(BaseLanguage):
+    # Class variable to store source code lines for current file
+    _current_source_lines = None
+    
     @staticmethod
     def assert_dependencies():
         pass
@@ -159,6 +162,9 @@ class Python(BaseLanguage):
         except ValueError:
             with open(filename, encoding='UTF-8') as f:
                 raw = f.read()
+        
+        # Store source lines for later use
+        Python._current_source_lines = raw.splitlines()
         return ast.parse(raw)
 
     @staticmethod
@@ -212,8 +218,21 @@ class Python(BaseLanguage):
         if parent.group_type == GROUP_TYPE.FILE:
             import_tokens = [djoin(parent.token, token)]
 
+        # Extract source code from stored source lines
+        source_code = None
+        if Python._current_source_lines and hasattr(tree, 'lineno') and hasattr(tree, 'end_lineno'):
+            try:
+                start_line = tree.lineno - 1  # Convert to 0-based indexing
+                # Since start_line is already converted to 0-based index and end_lineno is 1-based,
+                # we can directly use [start_line:end_line] for slicing without adding one to end_line
+                end_line = tree.end_lineno if tree.end_lineno else start_line + 1
+                source_code = '\n'.join(Python._current_source_lines[start_line:end_line])
+            except (IndexError, AttributeError):
+                pass
+
         return [Node(token, calls, variables, parent, import_tokens=import_tokens,
-                     line_number=line_number, is_constructor=is_constructor)]
+                     line_number=line_number, is_constructor=is_constructor, 
+                     source_code=source_code)]
 
     @staticmethod
     def make_root_node(lines, parent):
@@ -229,7 +248,33 @@ class Python(BaseLanguage):
         line_number = 0
         calls = make_calls(lines)
         variables = make_local_variables(lines, parent)
-        return Node(token, calls, variables, line_number=line_number, parent=parent)
+        
+        # Extract source code for global scope
+        source_code = None
+        if Python._current_source_lines and lines:
+            try:
+                # Get line numbers from all global statements
+                line_numbers = []
+                for line in lines:
+                    if hasattr(line, 'lineno'):
+                        start = line.lineno - 1
+                        end = getattr(line, 'end_lineno', line.lineno)
+                        line_numbers.extend(range(start, end))
+                
+                if line_numbers:
+                    # Extract lines that contain global code
+                    global_lines = []
+                    for line_num in sorted(set(line_numbers)):
+                        if 0 <= line_num < len(Python._current_source_lines):
+                            global_lines.append(Python._current_source_lines[line_num])
+                        else:
+                            logging.warning("Line number %d is out of range for source lines in %r.", line_num, token)
+                    source_code = '\n'.join(global_lines)
+            except (IndexError, AttributeError):
+                pass
+        
+        return Node(token, calls, variables, line_number=line_number, parent=parent, 
+                   source_code=source_code)
 
     @staticmethod
     def make_class_group(tree, parent):
